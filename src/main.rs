@@ -66,7 +66,7 @@ async fn main() -> std::io::Result<()> {
 
     tokio::spawn(async move {
         if let Err(e) = monitoring::network_monitoring(my_ip.clone()).await {
-            println!("Network monitoring error: {}", e);
+            eprintln!("Network monitoring error: {}", e);
         }
     });
     tokio::spawn(monitoring::cmd_monitoring());
