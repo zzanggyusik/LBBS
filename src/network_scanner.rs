@@ -1,5 +1,4 @@
 // network_scanner.rs
-
 use std::fs;
 use std::io::Write;
 use std::net::IpAddr;
@@ -8,15 +7,17 @@ use tokio::time::timeout;
 use reqwest::Client;
 use local_ip_address::local_ip;
 use std::path::Path;
+use pnet::datalink;
 
 pub struct NetworkScanner {
     client: Client,
     genesis_port: u16,
     config_path: String,
+    interface_name: String,
 }
 
 impl NetworkScanner {
-    pub fn new(genesis_port: u16, config_path: String) -> Self {
+    pub fn new(genesis_port: u16, config_path: String, interface_name: String) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_millis(500))
             .build()
@@ -26,11 +27,37 @@ impl NetworkScanner {
             client,
             genesis_port,
             config_path,
+            interface_name,
+        }
+    }
+
+    pub fn get_interface_ip(interface_name: &str) -> Option<IpAddr> {
+        let interfaces = datalink::interfaces();
+        
+        let interface = interfaces.into_iter()
+            .find(|iface| iface.name == interface_name)?;
+        
+        interface.ips.into_iter()
+            .find(|ip| ip.is_ipv4())
+            .map(|ip| ip.ip())
+    }
+
+    pub fn list_network_interfaces() {
+        println!("Available network interfaces:");
+        for iface in datalink::interfaces() {
+            println!("Name: {}", iface.name);
+            println!("  IPs: {:?}", iface.ips);
+            println!("  MAC: {:?}", iface.mac);
+            println!("  Flags: {}", if iface.is_up() { "UP" } else { "DOWN" });
+            println!();
         }
     }
 
     pub async fn scan_network(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let my_ip = local_ip()?;
+        // Get IP from specified interface
+        let my_ip = Self::get_interface_ip(&self.interface_name)
+            .ok_or("Failed to get IP from specified interface")?;
+
         let network_prefix = match my_ip {
             IpAddr::V4(ipv4) => {
                 let octets = ipv4.octets();
@@ -39,6 +66,7 @@ impl NetworkScanner {
             _ => return Err("Only IPv4 is supported".into()),
         };
 
+        println!("Using interface: {} with IP: {}", self.interface_name, my_ip);
         println!("Scanning network: {}.1-254", network_prefix);
 
         for i in 1..255 {
