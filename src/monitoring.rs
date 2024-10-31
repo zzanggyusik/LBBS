@@ -3,6 +3,7 @@ use reqwest::{Client, StatusCode};
 use std::result;
 use std::time::Duration;
 use tokio;
+use std::sync::Arc;
 
 use crate::car::car_send;
 use crate::drone::drone_send_cmd;
@@ -10,10 +11,22 @@ use crate::{blockchain, remote};
 use crate::instance::config::{self, UpdateNode, BLOCKCHAIN, CMD_MONITORING_TIME, GENESIS_CONFIG_PATH, IPADDR, NETWORK_MONITORING_TIME, NODE_TYPE, REMOTEIP, STATE, GENESIS_PORT};
 use crate::network_scanner::{NetworkScanner, read_genesis_config};
 
-pub async fn network_monitoring(init_ip: String) {
+// Send + Sync를 구현하는 커스텀 에러 타입 정의
+#[derive(Debug)]
+struct MonitoringError(String);
+
+impl std::error::Error for MonitoringError {}
+
+impl std::fmt::Display for MonitoringError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub async fn network_monitoring(init_ip: String) -> Result<(), MonitoringError> {
     let mut previous_ip = init_ip;
     let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(NETWORK_MONITORING_TIME));
-    let interface_name = "enp0s8".to_string();  // 사용할 네트워크 인터페이스
+    let interface_name = "enp0s8".to_string();
 
     loop {
         interval.tick().await;
@@ -23,9 +36,8 @@ pub async fn network_monitoring(init_ip: String) {
             if previous_ip != my_ip {
                 println!("Network change detected! Previous IP: {}, New IP: {}", previous_ip, my_ip);
                 
-                // 네트워크 스캔 실행
                 let scanner = NetworkScanner::new(
-                    GENESIS_PORT.parse().unwrap(),
+                    GENESIS_PORT.parse().map_err(|e| MonitoringError(e.to_string()))?,
                     GENESIS_CONFIG_PATH.to_string(),
                     interface_name.clone()
                 );
@@ -36,16 +48,14 @@ pub async fn network_monitoring(init_ip: String) {
                         
                         if my_ip == genesis_ip {
                             println!("Becoming genesis node");
-                            // 제네시스 노드가 된 경우 관련 설정 업데이트
                             let mut ipaddr = IPADDR.lock().unwrap();
                             *ipaddr = my_ip.clone();
                         } else {
                             println!("Connecting to existing genesis node");
-                            // 기존 제네시스 노드에 재연결
                             let client = Client::builder()
                                 .timeout(Duration::from_millis(10000))
                                 .build()
-                                .unwrap();
+                                .map_err(|e| MonitoringError(e.to_string()))?;
                             
                             let body = config::Node {
                                 address: format!("{}:{}", my_ip, GENESIS_PORT),
