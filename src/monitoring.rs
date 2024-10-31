@@ -1,3 +1,4 @@
+// monitoring.rs
 use reqwest::{Client, StatusCode};
 use std::result;
 use std::time::Duration;
@@ -6,43 +7,79 @@ use tokio;
 use crate::car::car_send;
 use crate::drone::drone_send_cmd;
 use crate::{blockchain, remote};
-use crate::instance::config::{self, UpdateNode, BLOCKCHAIN, CMD_MONITORING_TIME, GENESIS_NODE, IPADDR, NETWORK_MONITORING_TIME, NODE_TYPE, REMOTEIP, STATE};
+use crate::instance::config::{self, UpdateNode, BLOCKCHAIN, CMD_MONITORING_TIME, GENESIS_CONFIG_PATH, IPADDR, NETWORK_MONITORING_TIME, NODE_TYPE, REMOTEIP, STATE, GENESIS_PORT};
+use crate::network_scanner::{NetworkScanner, read_genesis_config};
 
 pub async fn network_monitoring(init_ip: String) {
-    // 주기적으로 IP 확인하여 이전 인터넷 환경과 다를 경우 Genesis 노드에게 업데이트 요청
-    // 모니터링 주기는 config의 monitoring_time 을 통해 설정됨
     let mut previous_ip = init_ip;
     let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(NETWORK_MONITORING_TIME));
+    let interface_name = "enp0s8".to_string();  // 사용할 네트워크 인터페이스
+
     loop {
         interval.tick().await;
-        let my_ip = local_ip_address::local_ip().unwrap().to_string();
+        if let Some(my_ip) = NetworkScanner::get_interface_ip(&interface_name) {
+            let my_ip = my_ip.to_string();
 
-        if previous_ip != my_ip {
-            let client = Client::builder()
-                .timeout(Duration::from_millis(1000)) // millisecond
-                .build()
-                .unwrap();
-            let body = UpdateNode::new(previous_ip.clone(), my_ip.clone(), NODE_TYPE.lock().unwrap().clone());
-            let url = format!("http:{}:{}/delete-node", config::GENESIS_NODE, config::GENESIS_PORT);
+            if previous_ip != my_ip {
+                println!("Network change detected! Previous IP: {}, New IP: {}", previous_ip, my_ip);
+                
+                // 네트워크 스캔 실행
+                let scanner = NetworkScanner::new(
+                    GENESIS_PORT.parse().unwrap(),
+                    GENESIS_CONFIG_PATH.to_string(),
+                    interface_name.clone()
+                );
 
-            match client.post(url).json(&body).send().await {
-                Ok(response) => {
-                    if response.status() == StatusCode::OK {
-                        println!("Update success");
+                match scanner.scan_network().await {
+                    Ok(genesis_ip) => {
+                        println!("Found genesis node at: {}", genesis_ip);
+                        
+                        if my_ip == genesis_ip {
+                            println!("Becoming genesis node");
+                            // 제네시스 노드가 된 경우 관련 설정 업데이트
+                            let mut ipaddr = IPADDR.lock().unwrap();
+                            *ipaddr = my_ip.clone();
+                        } else {
+                            println!("Connecting to existing genesis node");
+                            // 기존 제네시스 노드에 재연결
+                            let client = Client::builder()
+                                .timeout(Duration::from_millis(10000))
+                                .build()
+                                .unwrap();
+                            
+                            let body = config::Node {
+                                address: format!("{}:{}", my_ip, GENESIS_PORT),
+                                node_type: NODE_TYPE.lock().unwrap().clone()
+                            };
 
-                        previous_ip = my_ip.clone();
-
-                        let mut ipaddr = IPADDR.lock().unwrap();
-                        *ipaddr = my_ip;                        
+                            let url = format!("http://{}:{}/register-node", genesis_ip, GENESIS_PORT);
+                            
+                            match client.post(&url).json(&body).send().await {
+                                Ok(response) => {
+                                    if response.status() == StatusCode::OK {
+                                        println!("Successfully registered with genesis node");
+                                        let mut ipaddr = IPADDR.lock().unwrap();
+                                        *ipaddr = my_ip.clone();
+                                    } else {
+                                        println!("Failed to register with genesis node: {}", response.status());
+                                    }
+                                },
+                                Err(e) => {
+                                    println!("Failed to connect to genesis node: {}", e);
+                                }
+                            }
+                        }
+                        
+                        previous_ip = my_ip;
+                    },
+                    Err(e) => {
+                        println!("Network scan failed: {}", e);
                     }
-                },
-
-                Err(e) => {
-                    println!("REQUEST FAIL : {}", e);
-                },
+                }
             }
+        } else {
+            println!("Failed to get IP from interface {}", interface_name);
         }
-            
     }
 }
 
@@ -56,7 +93,7 @@ pub async fn cmd_monitoring() {
 
         if result {
             init_state = cur_state;
-            let mut my_node= String::new();
+            let mut my_node = String::new();
             {
                 let node_type = NODE_TYPE.lock().unwrap().clone();
                 my_node = node_type; 
@@ -65,12 +102,9 @@ pub async fn cmd_monitoring() {
             if my_node == "drone".to_string() {
                 println!("{}", cmd);
                 drone_send_cmd(cmd).await;
-            }
-
-            else if my_node == "car".to_string() {
+            } else if my_node == "car".to_string() {
                 car_send(cmd).await;
             }
-            // remote::cmd_start(cmd, node_type).await;
         }
     }
 }
@@ -79,7 +113,6 @@ pub fn check(init_state: String) -> (bool, String, String, String) {
     let mut my_ip = String::new();
     {
         let ip_lock = IPADDR.lock().unwrap().clone();
-        // println!("{}", &ip_lock);
         my_ip = ip_lock;
     }
         
@@ -90,19 +123,10 @@ pub fn check(init_state: String) -> (bool, String, String, String) {
     }
                     
     for data in last_block.data.iter() {
-        // DEBUG
-        // if my_ip == GENESIS_NODE {
-        //     my_ip = "192.168.50.13".to_owned();
-        // }
-
-        //println!("data : {:?}", &data);
-                
         if &data.id == &my_ip {
             println!("data : {:?}", &data);
-            if &data.state != &data.command{
-        
+            if &data.state != &data.command {
                 if init_state != data.state {
-        
                     let cmd = data.command.clone();
                     let cur_state = data.state.clone();
                     let mut my_state = STATE.lock().unwrap();
@@ -114,15 +138,9 @@ pub fn check(init_state: String) -> (bool, String, String, String) {
                         my_node_type = node_type;
                     }
 
-                    let result = true;
-                    //println!("@@@@@@ {} {} {}", &result, &cur_state, & my_node_type);
-
-                    return (result, cur_state, cmd, my_node_type)
+                    return (true, cur_state, cmd, my_node_type)
                 }
             }
-        }
-        else {
-            // println!("Else Debug Log my ip:{} data ip : {}", &my_ip, &data.id);
         }
     }
 
