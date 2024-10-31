@@ -11,7 +11,6 @@ use crate::{blockchain, remote};
 use crate::instance::config::{self, UpdateNode, BLOCKCHAIN, CMD_MONITORING_TIME, GENESIS_CONFIG_PATH, IPADDR, NETWORK_MONITORING_TIME, NODE_TYPE, REMOTEIP, STATE, GENESIS_PORT};
 use crate::network_scanner::{NetworkScanner, read_genesis_config};
 
-// Send + Sync를 구현하는 커스텀 에러 타입 정의
 #[derive(Debug)]
 struct MonitoringError(String);
 
@@ -37,7 +36,7 @@ pub async fn network_monitoring(init_ip: String) -> Result<(), MonitoringError> 
                 println!("Network change detected! Previous IP: {}, New IP: {}", previous_ip, my_ip);
                 
                 let scanner = NetworkScanner::new(
-                    GENESIS_PORT.parse().map_err(|e| MonitoringError(e.to_string()))?,
+                    GENESIS_PORT.parse::<u16>().map_err(|e| MonitoringError(e.to_string()))?,
                     GENESIS_CONFIG_PATH.to_string(),
                     interface_name.clone()
                 );
