@@ -64,7 +64,11 @@ async fn main() -> std::io::Result<()> {
         println!("Nodes info : {:?}", nodeinfo);
     }
 
-    tokio::spawn(monitoring::network_monitoring(my_ip.clone()));
+    tokio::spawn(async move {
+        if let Err(e) = monitoring::network_monitoring(my_ip.clone()).await {
+            println!("Network monitoring error: {}", e);
+        }
+    });
     tokio::spawn(monitoring::cmd_monitoring());
 
     HttpServer::new(|| {
