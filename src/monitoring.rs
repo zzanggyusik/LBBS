@@ -11,8 +11,13 @@ use crate::{blockchain, remote};
 use crate::instance::config::{self, UpdateNode, BLOCKCHAIN, CMD_MONITORING_TIME, GENESIS_CONFIG_PATH, IPADDR, NETWORK_MONITORING_TIME, NODE_TYPE, REMOTEIP, STATE, GENESIS_PORT};
 use crate::network_scanner::{NetworkScanner, read_genesis_config};
 
+// Send + Sync + 'static을 명시적으로 구현하는 에러 타입
 #[derive(Debug)]
 struct MonitoringError(String);
+
+// 명시적으로 Send + Sync + 'static 표시
+unsafe impl Send for MonitoringError {}
+unsafe impl Sync for MonitoringError {}
 
 impl std::error::Error for MonitoringError {}
 
@@ -22,7 +27,8 @@ impl std::fmt::Display for MonitoringError {
     }
 }
 
-pub async fn network_monitoring(init_ip: String) -> Result<(), MonitoringError> {
+// Result 타입을 Box<dyn Error + Send + Sync + 'static>으로 변경
+pub async fn network_monitoring(init_ip: String) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     let mut previous_ip = init_ip;
     let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(NETWORK_MONITORING_TIME));
     let interface_name = "enp0s8".to_string();
@@ -36,7 +42,7 @@ pub async fn network_monitoring(init_ip: String) -> Result<(), MonitoringError> 
                 println!("Network change detected! Previous IP: {}, New IP: {}", previous_ip, my_ip);
                 
                 let scanner = NetworkScanner::new(
-                    GENESIS_PORT.parse::<u16>().map_err(|e| MonitoringError(e.to_string()))?,
+                    GENESIS_PORT.parse::<u16>()?,
                     GENESIS_CONFIG_PATH.to_string(),
                     interface_name.clone()
                 );
@@ -53,8 +59,7 @@ pub async fn network_monitoring(init_ip: String) -> Result<(), MonitoringError> 
                             println!("Connecting to existing genesis node");
                             let client = Client::builder()
                                 .timeout(Duration::from_millis(10000))
-                                .build()
-                                .map_err(|e| MonitoringError(e.to_string()))?;
+                                .build()?;
                             
                             let body = config::Node {
                                 address: format!("{}:{}", my_ip, GENESIS_PORT),
