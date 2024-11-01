@@ -4,6 +4,7 @@ use reqwest::{Client, StatusCode};
 use actix_cors::Cors;
 use std::sync::Mutex;
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
 mod blockchain;
 mod instance;
@@ -42,17 +43,45 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
         
         // Broadcast updated node list to all nodes
         let client = Client::new();
-        for node in nodes.iter() {  // .iter()를 사용하여 참조로 순회
+        let broadcast_nodes = nodes.clone(); // Clone for broadcast
+        
+        for node in broadcast_nodes.iter() {
             let url = format!("http://{}:{}/update-nodelist", node, config::PORT);
-            let _ = client.post(&url)
+            if let Err(e) = client.post(&url)
                 .json(&nodes)
                 .send()
-                .await;
+                .await {
+                println!("Failed to update node list for {}: {}", node, e);
+            }
         }
-        HttpResponse::Ok().body("Node registered successfully")
+
+        // Return the current node list to the new node
+        HttpResponse::Ok().json(nodes)
     } else {
         HttpResponse::BadRequest().body("Node already registered")
     }
+}
+
+#[derive(Serialize)]
+struct NodeInfo {
+    ip: String,
+    node_list: Vec<String>,
+    blockchain: blockchain::Blockchain,
+}
+
+// 새로운 get-node-info 엔드포인트 추가
+async fn get_node_info(data: web::Data<AppState>) -> impl Responder {
+    let my_ip = network::get_network_info().await.0;
+    let node_list = config::read_node_list();
+    let blockchain = data.blockchain.lock().unwrap().clone();
+
+    let info = NodeInfo {
+        ip: my_ip,
+        node_list,
+        blockchain,
+    };
+
+    HttpResponse::Ok().json(info)
 }
 
 async fn add_block(
@@ -220,6 +249,7 @@ async fn main() -> std::io::Result<()> {
             .route("/consensus", web::post().to(consensus))
             .route("/update-block", web::post().to(update_block))
             .route("/update-nodelist", web::post().to(update_nodelist))
+            .route("/get-node-info", web::get().to(get_node_info))
     })
     .bind(format!("0.0.0.0:{}", config::PORT))?
     .run()
