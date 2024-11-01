@@ -4,7 +4,7 @@ use std::{fs::File, time::{SystemTime, UNIX_EPOCH}};
 use std::io::prelude::*;
 use sha2::{Sha256, Digest};
 
-use crate::instance::config::{self, BlockData, BLOCKCHAINPATH, BLOCKLENGTH, DIFFICULTY};
+use crate::instance::config::{self, BLOCKCHAINPATH, BLOCKLENGTH, DIFFICULTY};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Block {
