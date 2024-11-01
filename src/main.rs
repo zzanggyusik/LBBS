@@ -236,7 +236,7 @@ async fn main() -> std::io::Result<()> {
         consensus_votes: Mutex::new(HashMap::new()),
     });
     
-    HttpServer::new(move || {
+    HttpServer::new(|| {
         let cors = Cors::default()
             .allowed_origin_fn(|origin, _req_head| {
                 true
