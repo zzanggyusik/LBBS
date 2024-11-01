@@ -11,16 +11,26 @@ pub struct HeartbeatManager {
 
 impl HeartbeatManager {
     pub fn new() -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(5))      // 기본 타임아웃
+            .connect_timeout(Duration::from_secs(3)) // 연결 타임아웃
+            .pool_idle_timeout(Duration::from_secs(30)) // 유휴 연결 타임아웃
+            .pool_max_idle_per_host(10)           // 호스트당 최대 유휴 연결 수
+            .tcp_keepalive(Duration::from_secs(60)) // TCP keepalive
+            .build()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to create client, using default: {}", e);
+                Client::new()
+            });
+
         HeartbeatManager {
-            client: Client::builder()
-                    .timeout(Duration::from_secs(5))
-                    .build()
-                    .unwrap(),
+            client,
             my_ip: String::new(),
         }
     }
 
     pub async fn start_heartbeat(&mut self) {
+        tokio::time::sleep(Duration::from_secs(2)).await;
         self.my_ip = network::get_network_info().await.0;
         let mut interval = interval(Duration::from_secs(5));
         
@@ -45,8 +55,19 @@ impl HeartbeatManager {
             
             expected_alive_count += 1;  // 자신 이외의 노드마다 카운트 증가
             
-            if self.is_node_alive(node).await {
-                alive_nodes.insert(node.clone());
+            let mut retry_count = 0;
+            let max_retries = 3;
+            
+            while retry_count < max_retries {
+                if self.is_node_alive(node).await {
+                    alive_nodes.insert(node.clone());
+                    break;
+                }
+                retry_count += 1;
+                if retry_count < max_retries {
+                    // 재시도 전 짧은 대기
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
             }
         }
         
@@ -54,14 +75,20 @@ impl HeartbeatManager {
         let actual_alive_count = alive_nodes.len() - 1;  // 자신을 제외한 살아있는 노드 수
         
         if actual_alive_count != expected_alive_count {
-            println!("Dead nodes detected, updating node list...");
-            println!("Expected alive nodes: {}, Actual alive nodes: {}", 
-                    expected_alive_count, actual_alive_count);
-            let new_nodes: Vec<String> = alive_nodes.into_iter().collect();
-            config::save_node_list(new_nodes.clone());
-            
-            // Broadcast updated node list
-            self.broadcast_node_list(&new_nodes).await;
+            println!("Node check results:");
+            println!("- Expected alive nodes: {}", expected_alive_count);
+            println!("- Actual alive nodes: {}", actual_alive_count);
+            println!("- Current alive nodes: {:?}", alive_nodes);
+            println!("- Total nodes in list: {:?}", nodes);
+
+            if actual_alive_count < expected_alive_count {
+                println!("Dead nodes detected, updating node list...");
+                let new_nodes: Vec<String> = alive_nodes.into_iter().collect();
+                config::save_node_list(new_nodes.clone());
+                
+                // Broadcast updated node list
+                self.broadcast_node_list(&new_nodes).await;
+            }
         }
     }
 
@@ -70,7 +97,7 @@ impl HeartbeatManager {
         let url = format!("http://{}:{}/heartbeat", node, PORT);
         
         match timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(5),
             self.client.get(&url).send()
         ).await {
             Ok(Ok(response)) => response.status() == StatusCode::OK,
