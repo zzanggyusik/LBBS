@@ -39,10 +39,11 @@ pub fn read_genesis_config() -> Option<String> {
     }
 }
 
-pub fn save_node_list(nodes: Vec<String>) {
+pub fn save_node_list(nodes: Vec<String>) -> io::Result<()> {
     let contents = nodes.join("\n");
-    let mut file = File::create(NODE_LIST_PATH).expect("Failed to create node list");
-    file.write_all(contents.as_bytes()).expect("Failed to write node list");
+    let mut file = File::create(NODE_LIST_PATH)?;
+    file.write_all(contents.as_bytes())?;
+    Ok(())
 }
 
 pub fn read_node_list() -> Vec<String> {
