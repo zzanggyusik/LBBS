@@ -38,30 +38,72 @@ async fn genesis_info() -> impl Responder {
 
 async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
     let mut nodes = config::read_node_list();
+    let new_ip = ip.to_string();
+    
     if !nodes.contains(&ip.to_string()) {
+        println!("Registering new node: {}", new_ip);
+        
         nodes.push(ip.to_string());
-        config::save_node_list(nodes.clone());
-        
-        // Broadcast updated node list to all nodes
-        let client = Client::builder()
-            .timeout(Duration::from_millis(5000))
-            .build()
-            .unwrap();
-        
-        let broadcast_nodes = nodes.clone(); // Clone for broadcast
-        
-        for node in broadcast_nodes.iter() {
-            let url = format!("http://{}:{}/update-nodelist", node, config::PORT);
-            if let Err(e) = client.post(&url)
-                .json(&nodes)
-                .send()
-                .await {
-                println!("Failed to update node list for {}: {}", node, e);
+        match config::save_node_list(nodes.clone()) {
+            Ok(_) => {
+                println!("Node list saved successfully");
+                
+                // Create client with increased timeout
+                let client = Client::builder()
+                    .timeout(Duration::from_secs(5))
+                    .build()
+                    .unwrap();
+                
+                // Broadcast to existing nodes only (exclude the new node)
+                let broadcast_nodes: Vec<String> = nodes.iter()
+                    .filter(|&node| node != &new_ip)
+                    .cloned()
+                    .collect();
+                
+                println!("Broadcasting to existing nodes: {:?}", broadcast_nodes);
+                
+                // Add delay before broadcasting
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+                
+                for node in broadcast_nodes {
+                    let url = format!("http://{}:{}/update-nodelist", node, config::PORT);
+                    println!("Sending update to: {}", url);
+                    
+                    match client.post(&url)
+                        .json(&nodes)
+                        .send()
+                        .await {
+                        Ok(response) => {
+                            if response.status().is_success() {
+                                println!("Successfully updated node: {}", node);
+                            } else {
+                                println!("Failed to update node {} with status: {}", 
+                                    node, response.status());
+                            }
+                        },
+                        Err(e) => {
+                            println!("Error updating node {}: {}", node, e);
+                            // Continue with other nodes despite error
+                        }
+                    }
+                }
+                
+                let response = RegisterResponse {
+                    status: "success".to_string(),
+                    message: "Node registered successfully".to_string(),
+                    nodes: nodes.clone()
+                };
+                HttpResponse::Ok().json(response)
+            },
+            Err(e) => {
+                println!("Failed to save node list: {}", e);
+                let response = RegisterResponse {
+                    status: "error".to_string(),
+                    message: format!("Failed to save node list: {}", e),
+                    nodes: Vec::new()
+                };
+                HttpResponse::InternalServerError().json(response)
             }
-        }
-
-        // Return the current node list to the new node
-        HttpResponse::Ok().json(nodes)
     } else {
         HttpResponse::BadRequest().body("Node already registered")
     }
