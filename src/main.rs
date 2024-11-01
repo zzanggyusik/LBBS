@@ -96,7 +96,6 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
         }
     } else {
         println!("Node {} already registered", new_ip);
-        };
         HttpResponse::BadRequest().json("BadRequest")
     }
 }
