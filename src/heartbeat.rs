@@ -10,7 +10,10 @@ pub struct HeartbeatManager {
 impl HeartbeatManager {
     pub fn new() -> Self {
         HeartbeatManager {
-            client: Client::new(),
+            client: Client::builder()
+                    .timeout(Duration::from_secs(5))
+                    .build()
+                    .unwrap(),
         }
     }
 
