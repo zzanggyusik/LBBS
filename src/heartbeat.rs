@@ -1,7 +1,7 @@
 use tokio::time::{interval, Duration, timeout};
 use std::collections::HashSet;
 use crate::config::{self, PORT};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use crate::network;
 
 pub struct HeartbeatManager {
@@ -66,13 +66,14 @@ impl HeartbeatManager {
     }
 
     async fn is_node_alive(&self, node: &str) -> bool {
-        let url = format!("http://{}:{}/heartbeat", node.clone(), PORT);
-        println!("Checking Nodes State : IP : {}", node);
+        println!("Checking Nodes State : IP : {}", &node);
+        let url = format!("http://{}:{}/heartbeat", node, PORT);
+        
         match timeout(
-            Duration::from_secs(60),
+            Duration::from_secs(10),
             self.client.get(&url).send()
         ).await {
-            Ok(Ok(response)) => response.status().is_success(),
+            Ok(Ok(response)) => response.status() == StatusCode::OK,
             _ => false
         }
     }
