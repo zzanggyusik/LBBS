@@ -57,7 +57,7 @@ pub async fn check_node_exists(ip: &str, port: &str) -> bool {
     let client = Client::new();
     let url = format!("http://{}:{}/isalive", ip, port);
     
-    match timeout(Duration::from_secs(1), client.get(&url).send()).await {
+    match timeout(Duration::from_millis(100), client.get(&url).send()).await {
         Ok(Ok(response)) => response.status().is_success(),
         _ => false
     }
