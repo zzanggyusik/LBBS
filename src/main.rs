@@ -204,7 +204,7 @@ async fn update_block(
 async fn update_nodelist(
     nodes: web::Json<Vec<String>>
 ) -> impl Responder {
-    println!("{:?}", nodes.clone);
+    println!("{:?}", nodes.clone());
     config::save_node_list(nodes.into_inner());
     HttpResponse::Ok().json("OK")
 }
