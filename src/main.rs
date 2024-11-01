@@ -42,25 +42,19 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
     
     if !nodes.contains(&new_ip) {
         println!("Registering new node: {}", new_ip);
-        
-        // Add new node to the list
         nodes.push(new_ip.clone());
         
-        // Save updated node list
         match config::save_node_list(nodes.clone()) {
             Ok(_) => {
                 println!("Node list saved successfully. Current nodes: {:?}", nodes);
                 
-                // Create client with increased timeout
                 let client = Client::builder()
                     .timeout(Duration::from_secs(5))
                     .build()
                     .unwrap();
                 
-                // Add small delay before broadcasting to allow new node to initialize
                 tokio::time::sleep(Duration::from_millis(1000)).await;
                 
-                // Broadcast to all nodes including the new one
                 let mut broadcast_failures = Vec::new();
                 
                 for node in &nodes {
@@ -87,27 +81,23 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
                     }
                 }
                 
-                // Construct response message
                 let message = if broadcast_failures.is_empty() {
                     "Node registered and all nodes updated successfully".to_string()
                 } else {
                     format!("Node registered but failed to update some nodes: {:?}", broadcast_failures)
                 };
                 
-                let response = RegisterResponse {
-                    status: "success".to_string(),
-                    message,
-                    nodes: nodes.clone()
-                };
-                HttpResponse::Ok().json("?K")
+                HttpResponse::Ok().json("OK")
             },
             Err(e) => {
                 println!("Failed to save node list: {}", e);
+                };
                 HttpResponse::InternalServerError().json("InternalServerError")
             }
         }
     } else {
         println!("Node {} already registered", new_ip);
+        };
         HttpResponse::BadRequest().json("BadRequest")
     }
 }
@@ -216,7 +206,7 @@ async fn update_block(
 async fn update_nodelist(
     nodes: web::Json<Vec<String>>
 ) -> impl Responder {
-    println!({?}, nodes.clone);
+    println!({:?}, nodes.clone);
     config::save_node_list(nodes.into_inner());
     HttpResponse::Ok().json("OK")
 }
