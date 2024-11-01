@@ -114,6 +114,24 @@ impl Blockchain {
         blockchain
     }
 
+    pub fn save_to_file(&self) -> std::io::Result<()> {
+        let data = serde_json::to_string(self)?;
+        std::fs::write("data.block", data)?;
+        Ok(())
+    }
+
+    pub fn load_from_file() -> std::io::Result<Self> {
+        if let Ok(data) = std::fs::read_to_string("data.block") {
+            if let Ok(blockchain) = serde_json::from_str(&data) {
+                Ok(blockchain)
+            } else {
+                Ok(Blockchain::new())
+            }
+        } else {
+            Ok(Blockchain::new())
+        }
+    }
+
     pub fn add_block(&mut self, data: Data) -> Block {
         let last_block = self.blocks.last().unwrap();
         let mut new_block_data = last_block.data.clone();
@@ -124,6 +142,11 @@ impl Blockchain {
         self.blocks.push(new_block.clone());
 
         self.update_block_length();
+        
+        // Save to file after adding new block
+        if let Err(e) = self.save_to_file() {
+            println!("Failed to save blockchain: {}", e);
+        }
 
         return new_block.clone();
     }
@@ -131,6 +154,10 @@ impl Blockchain {
     pub fn update_block(&mut self, block: Block) {
         self.blocks.push(block);
         self.update_block_length();
+        // Save to file after update
+        if let Err(e) = self.save_to_file() {
+            println!("Failed to save blockchain: {}", e);
+        }
     }
 
     pub fn update_block_length(&mut self) {

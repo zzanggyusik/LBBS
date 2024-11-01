@@ -8,9 +8,14 @@ use std::collections::HashMap;
 mod blockchain;
 mod instance;
 mod network;
+mod monitor;
+mod heartbeat;
 
 use instance::config;
 use network::BlockData;
+use monitor::NetworkMonitor;
+use heartbeat::HeartbeatManager;
+use blockchain::Blockchain;
 
 struct AppState {
     blockchain: Mutex<blockchain::Blockchain>,
@@ -37,7 +42,7 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
         
         // Broadcast updated node list to all nodes
         let client = Client::new();
-        for node in nodes {
+        for node in nodes.iter() {  // .iter()를 사용하여 참조로 순회
             let url = format!("http://{}:{}/update-nodelist", node, config::PORT);
             let _ = client.post(&url)
                 .json(&nodes)
@@ -68,7 +73,7 @@ async fn add_block(
     let nodes = config::read_node_list();
     let client = Client::new();
     
-    for node in nodes {
+    for node in nodes.iter() {  // .iter()를 사용하여 참조로 순회
         let url = format!("http://{}:{}/consensus", node, config::PORT);
         if let Ok(response) = client.post(&url)
             .json(&block_data)
@@ -96,7 +101,7 @@ async fn add_block(
         let new_block = blockchain.add_block(block_data);
         
         // Broadcast new block to all nodes
-        for node in nodes {
+        for node in nodes.iter() {  // .iter()를 사용하여 참조로 순회
             let url = format!("http://{}:{}/update-block", node, config::PORT);
             let _ = client.post(&url)
                 .json(&new_block)
@@ -133,9 +138,53 @@ async fn update_nodelist(
     HttpResponse::Ok().finish()
 }
 
+async fn heartbeat() -> impl Responder {
+    HttpResponse::Ok().finish()
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     config::init_config();
+
+    println!("=================================================");
+    println!("Blockchain Node Startup");
+    println!("=================================================");
+    
+    let (my_ip, network_prefix) = network::get_network_info().await;
+    println!("Interface Detection:");
+    println!("- Current Node IP: {}", my_ip);
+    println!("- Network Range: {}.1 ~ {}.244", network_prefix, network_prefix);
+    println!("=================================================");
+    println!("Starting network scan...");
+
+    let mut monitor = NetworkMonitor::new();
+    tokio::spawn(async move {
+        monitor.start_monitoring().await;
+    });
+
+    let genesis_config = config::read_genesis_config();
+    let my_ip_clone = my_ip.clone();
+
+    if let Some(genesis_ip) = genesis_config {
+        if genesis_ip == my_ip_clone {
+            let heartbeat_manager = HeartbeatManager::new();
+            tokio::spawn(async move {
+                heartbeat_manager.start_heartbeat().await;
+            });
+        }
+    }
+
+    let blockchain = match Blockchain::load_from_file() {
+        Ok(chain) => {
+            println!("Loaded existing blockchain from file");
+            chain
+        },
+        Err(e) => {
+            println!("Failed to load blockchain from file: {}", e);
+            println!("Creating new blockchain");
+            Blockchain::new()
+        }
+    };
     
     // Check if we are genesis node or need to connect to existing network
     if let Some(genesis_ip) = network::scan_network().await {
@@ -154,7 +203,7 @@ async fn main() -> std::io::Result<()> {
     }
     
     let app_state = web::Data::new(AppState {
-        blockchain: Mutex::new(blockchain::Blockchain::new()),
+        blockchain: Mutex::new(blockchain), 
         consensus_votes: Mutex::new(HashMap::new()),
     });
     
