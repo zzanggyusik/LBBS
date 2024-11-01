@@ -5,6 +5,7 @@ use actix_cors::Cors;
 use std::sync::Mutex;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 mod blockchain;
 mod instance;
@@ -45,7 +46,7 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
         let client = Client::builder()
             .timeout(Duration::from_millis(1000))
             .build()
-            .unwarp();
+            .unwrap();
         
         let broadcast_nodes = nodes.clone(); // Clone for broadcast
         
