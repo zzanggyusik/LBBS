@@ -91,7 +91,6 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
             },
             Err(e) => {
                 println!("Failed to save node list: {}", e);
-                };
                 HttpResponse::InternalServerError().json("InternalServerError")
             }
         }
