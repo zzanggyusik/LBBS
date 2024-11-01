@@ -238,7 +238,7 @@ async fn main() -> std::io::Result<()> {
 
     if let Some(genesis_ip) = genesis_config {
         if genesis_ip == my_ip_clone {
-            let heartbeat_manager = HeartbeatManager::new();
+            let mut heartbeat_manager = HeartbeatManager::new();
             tokio::spawn(async move {
                 heartbeat_manager.start_heartbeat().await;
             });
@@ -301,6 +301,7 @@ async fn main() -> std::io::Result<()> {
             .route("/update-block", web::post().to(update_block))
             .route("/update-nodelist", web::post().to(update_nodelist))
             .route("/get-node-info", web::get().to(get_node_info))
+            .route("/heartbeat", web::get().to(heartbeat))
     })
     .bind(format!("0.0.0.0:{}", config::PORT))?
     .run()
