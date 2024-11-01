@@ -172,11 +172,11 @@ async fn update_nodelist(
     nodes: web::Json<Vec<String>>
 ) -> impl Responder {
     config::save_node_list(nodes.into_inner());
-    HttpResponse::Ok().finish()
+    HttpResponse::Ok().json("OK")
 }
 
 async fn heartbeat() -> impl Responder {
-    HttpResponse::Ok().finish()
+    HttpResponse::Ok().json("OK")
 }
 
 #[actix_web::main]
