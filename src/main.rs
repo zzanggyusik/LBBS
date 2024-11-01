@@ -42,7 +42,11 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
         config::save_node_list(nodes.clone());
         
         // Broadcast updated node list to all nodes
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(Duration::from_millis(1000))
+            .build()
+            .unwarp();
+        
         let broadcast_nodes = nodes.clone(); // Clone for broadcast
         
         for node in broadcast_nodes.iter() {
@@ -100,7 +104,10 @@ async fn add_block(
     
     // Request consensus from all nodes
     let nodes = config::read_node_list();
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(Duration::from_millis(1000))
+        .build()
+        .unwrap();
     
     for node in nodes.iter() {  // .iter()를 사용하여 참조로 순회
         let url = format!("http://{}:{}/consensus", node, config::PORT);
@@ -218,7 +225,10 @@ async fn main() -> std::io::Result<()> {
     // Check if we are genesis node or need to connect to existing network
     if let Some(genesis_ip) = network::scan_network().await {
         // Connect to existing network
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(Duration::from_millis(1000))
+            .build()
+            .unwrap();
         let my_ip = network::get_network_info().await.0;
         let url = format!("http://{}:{}/register-node/{}", genesis_ip, config::PORT, my_ip);
         let _ = client.post(&url).send().await;
