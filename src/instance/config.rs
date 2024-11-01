@@ -7,7 +7,7 @@ use std::path::Path;
 pub const BLOCKCHAINPATH: &str = "./data/blockchain.json";
 pub const GENESIS_CONFIG_PATH: &str = "./config/genesis_config.txt";
 pub const NODE_LIST_PATH: &str = "./config/nodelist.txt";
-pub const PORT: &str = "8080";
+pub const PORT: &str = "9999";
 pub const DIFFICULTY: usize = 4;
 
 lazy_static! {
