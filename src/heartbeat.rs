@@ -33,24 +33,30 @@ impl HeartbeatManager {
     async fn check_nodes(&self) {
         let nodes = config::read_node_list();
         let mut alive_nodes = HashSet::new();
+        let mut expected_alive_count = 0;  // 예상되는 살아있는 노드 수
         
         // 자신의 IP는 항상 살아있는 노드 목록에 포함
         alive_nodes.insert(self.my_ip.clone());
         
         for node in nodes.iter() {
-            // 자신의 IP는 건너뛰기
             if node == &self.my_ip {
-                continue;
+                continue;  // 자신의 IP는 카운트에서 제외
             }
+            
+            expected_alive_count += 1;  // 자신 이외의 노드마다 카운트 증가
             
             if self.is_node_alive(node).await {
                 alive_nodes.insert(node.clone());
             }
         }
         
-        // Update node list if any node is dead
-        if alive_nodes.len() != nodes.len() {
+        // 실제 살아있는 다른 노드의 수와 예상 수를 비교
+        let actual_alive_count = alive_nodes.len() - 1;  // 자신을 제외한 살아있는 노드 수
+        
+        if actual_alive_count != expected_alive_count {
             println!("Dead nodes detected, updating node list...");
+            println!("Expected alive nodes: {}, Actual alive nodes: {}", 
+                    expected_alive_count, actual_alive_count);
             let new_nodes: Vec<String> = alive_nodes.into_iter().collect();
             config::save_node_list(new_nodes.clone());
             
@@ -63,7 +69,7 @@ impl HeartbeatManager {
         let url = format!("http://{}:{}/heartbeat", node.clone(), PORT);
         println!("Checking Nodes State : IP : {}", node);
         match timeout(
-            Duration::from_secs(5),
+            Duration::from_secs(60),
             self.client.get(&url).send()
         ).await {
             Ok(Ok(response)) => response.status().is_success(),
@@ -73,6 +79,10 @@ impl HeartbeatManager {
 
     async fn broadcast_node_list(&self, nodes: &Vec<String>) {
         for node in nodes {
+            if node == &self.my_ip {
+                continue;
+            }
+            
             let url = format!("http://{}:{}/update-nodelist", node, PORT);
             if let Err(e) = self.client.post(&url).json(nodes).send().await {
                 println!("Failed to update node list for {}: {}", node, e);
