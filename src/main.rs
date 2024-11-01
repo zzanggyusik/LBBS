@@ -44,7 +44,7 @@ async fn register_node(ip: web::Path<String>, data: web::Data<AppState>) -> impl
         
         // Broadcast updated node list to all nodes
         let client = Client::builder()
-            .timeout(Duration::from_millis(1000))
+            .timeout(Duration::from_millis(5000))
             .build()
             .unwrap();
         
